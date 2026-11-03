@@ -250,33 +250,37 @@
       box-shadow: 6px 6px 0px #000000 !important;
     }
 
-    /* Chunky Boxy Buttons */
+    /* Chunky Boxy Buttons with Spring Feedback */
     .btn-boxy {
       border: 3px solid #000000;
       border-radius: 14px;
       box-shadow: 4px 4px 0px #000000;
       font-weight: 700;
-      transition: all 0.14s ease;
+      transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s ease, color 0.15s ease;
       display: inline-flex;
       align-items: center;
       justify-content: center;
     }
     .btn-boxy:hover {
-      transform: translate(-3px, -3px);
+      transform: translate(-3px, -3px) scale(1.015);
       box-shadow: 7px 7px 0px #000000;
     }
     .btn-boxy:active {
-      transform: translate(2px, 2px);
+      transform: translate(2px, 2px) scale(0.985);
       box-shadow: 1px 1px 0px #000000;
     }
 
-    /* Sticker Badges */
+    /* Sticker Badges with Tactile Elevation */
     .sticker-badge {
       border: 2px solid #000000;
       box-shadow: 3px 3px 0px #000000;
       font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.05em;
+      transition: transform 0.15s ease;
+    }
+    .sticker-badge:hover {
+      transform: scale(1.05) rotate(-1deg);
     }
 
     /* Infinite Marquee Ticker */
@@ -312,6 +316,163 @@
       animation: floatSticker 5s ease-in-out infinite alternate;
     }
 
+    /* --- Butter-Smooth View & Card Animations --- */
+    @keyframes viewFadeScale {
+      0% {
+        opacity: 0;
+        transform: translateY(12px) scale(0.985);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+    .view-enter {
+      animation: viewFadeScale 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    @keyframes cardRippleIn {
+      0% {
+        opacity: 0;
+        transform: translateY(16px) scale(0.96);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+    .card-anim-in {
+      animation: cardRippleIn 0.32s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+    }
+
+    /* --- Neon Glow Pulse on Primary CTA / Execution Buttons --- */
+    @keyframes neonGlowLime {
+      0%, 100% {
+        box-shadow: 4px 4px 0px #000, 0 0 0px rgba(163, 230, 53, 0);
+      }
+      50% {
+        box-shadow: 4px 4px 0px #000, 0 0 16px rgba(163, 230, 53, 0.45);
+      }
+    }
+    .animate-glow-lime {
+      animation: neonGlowLime 2.6s ease-in-out infinite;
+    }
+
+    @keyframes neonGlowYellow {
+      0%, 100% {
+        box-shadow: 4px 4px 0px #000, 0 0 0px rgba(250, 204, 21, 0);
+      }
+      50% {
+        box-shadow: 4px 4px 0px #000, 0 0 18px rgba(250, 204, 21, 0.5);
+      }
+    }
+    .animate-glow-yellow {
+      animation: neonGlowYellow 2.6s ease-in-out infinite;
+    }
+
+    /* --- Animated Progress Shimmer --- */
+    @keyframes shimmerFlow {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .progress-shimmer {
+      background-image: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.45) 50%, rgba(255, 255, 255, 0) 100%) !important;
+      background-size: 200% 100% !important;
+      animation: shimmerFlow 1.6s infinite linear !important;
+    }
+
+    /* --- Spring Pop for Search Modal & Dialogs --- */
+    @keyframes modalSpringIn {
+      0% { opacity: 0; transform: scale(0.92) translateY(14px); }
+      100% { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .modal-spring-box {
+      animation: modalSpringIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    /* --- Spring Toast Notifications --- */
+    @keyframes toastSpringIn {
+      0% { opacity: 0; transform: translateY(20px) scale(0.9); }
+      65% { opacity: 1; transform: translateY(-4px) scale(1.02); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .toast-item-anim {
+      animation: toastSpringIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+    }
+
+    /* --- Mobile Bottom Dock Active Pill Styling --- */
+    .mobile-dock-btn {
+      position: relative;
+      transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .mobile-dock-btn.active-dock-pill {
+      transform: scale(1.08);
+    }
+    .mobile-dock-btn.active-dock-pill::after {
+      content: '';
+      position: absolute;
+      bottom: -2px;
+      width: 16px;
+      height: 3px;
+      border-radius: 9999px;
+      background-color: currentColor;
+      box-shadow: 0 0 6px currentColor;
+    }
+
+    /* Custom Sleek Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--bg);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #3b4261;
+      border-radius: 4px;
+      border: 2px solid var(--bg);
+    }
+    html.light ::-webkit-scrollbar-thumb {
+      background: #94a3b8;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #facc15;
+    }
+
+    /* Phone & Tablet Responsive Layout Tweaks */
+    @media (max-width: 639px) {
+      .hero-title {
+        font-size: clamp(2rem, 8vw, 3rem) !important;
+        line-height: 1.1 !important;
+      }
+      .cat-pill-container {
+        mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
+        -webkit-mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
+      }
+    }
+
+    @media (min-width: 640px) and (max-width: 1023px) {
+      /* Tablet-Specific Ergonomics */
+      .tool-item-card {
+        min-height: 180px;
+      }
+      .cat-pill-container {
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+      }
+    }
+
+    /* Landscape Phone Handling */
+    @media (max-height: 480px) and (orientation: landscape) {
+      header {
+        height: 54px !important;
+      }
+      #mobile-bottom-dock {
+        padding-top: 2px !important;
+        padding-bottom: max(2px, var(--safe-bottom)) !important;
+      }
+    }
+
     /* Accessibility Focus */
     a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
       outline: 3px solid #facc15 !important;
@@ -326,6 +487,7 @@
         scroll-behavior: auto !important;
       }
       .marquee-track { animation: none; transform: none; }
+      .animate-glow-lime, .animate-glow-yellow, .progress-shimmer, .toast-item-anim, .modal-spring-box { animation: none !important; }
     }
 
     /* Drop Zone Boxy Styling */
@@ -334,11 +496,16 @@
       border-radius: 24px;
       transition: all 0.2s ease;
     }
+    @keyframes dropZonePulse {
+      0%, 100% { transform: scale(1); box-shadow: 6px 6px 0px #000; }
+      50% { transform: scale(1.015); box-shadow: 10px 10px 0px #f43f5e; }
+    }
     .drop-zone-boxy.dragover {
-      border-color: #f43f5e;
-      background: rgba(244, 63, 94, 0.12);
+      border-color: #f43f5e !important;
+      background: rgba(244, 63, 94, 0.12) !important;
       transform: scale(1.02);
-      box-shadow: 8px 8px 0px #f43f5e;
+      box-shadow: 8px 8px 0px #f43f5e !important;
+      animation: dropZonePulse 1.2s ease-in-out infinite;
     }
 
     .page-thumb-boxy {
@@ -454,7 +621,7 @@
 
   <!-- Quick Search Modal -->
   <div id="search-modal" onclick="if(event.target === this) closeSearchModal()" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden items-center justify-center p-4">
-    <div class="w-full max-w-xl rounded-3xl p-6 border-4 border-black boxy-shadow bg-card-bg" style="background-color: var(--card-bg)">
+    <div class="modal-spring-box w-full max-w-xl rounded-3xl p-5 sm:p-6 border-4 border-black boxy-shadow bg-card-bg" style="background-color: var(--card-bg)">
       <div class="flex items-center justify-between pb-4 border-b-3 border-black">
         <div class="flex items-center gap-3 w-full">
           <span class="material-symbols-outlined text-brand-pink text-3xl font-black">search</span>
@@ -477,7 +644,7 @@
   <main id="main-content" class="relative z-10 min-h-[calc(100vh-220px)]">
 
     <!-- VIEW: HOMEPAGE -->
-    <div id="view-home" class="view-panel">
+    <div id="view-home" class="view-panel view-enter">
       
       <!-- HERO SECTION -->
       <section class="relative pt-14 pb-12 md:pt-20 md:pb-16 max-w-7xl mx-auto px-6 text-center">
@@ -1499,7 +1666,7 @@
               <span class="w-3 h-3 rounded-full bg-brand-lime border border-black animate-ping"></span>
               <span id="univ-status-text">Ready to transform in client memory</span>
             </div>
-            <button id="univ-execute-btn" onclick="executeUniversalConversion()" class="w-full sm:w-auto btn-boxy px-10 py-4 bg-brand-yellow text-black text-lg font-black flex items-center justify-center gap-3">
+            <button id="univ-execute-btn" onclick="executeUniversalConversion()" class="w-full sm:w-auto btn-boxy animate-glow-yellow px-10 py-4 bg-brand-yellow text-black text-lg font-black flex items-center justify-center gap-3">
               <span id="univ-execute-text">Convert File Now</span>
               <span class="material-symbols-outlined text-2xl font-black">bolt</span>
             </button>
@@ -1625,7 +1792,7 @@
               <span class="w-3 h-3 rounded-full bg-brand-lime border border-black animate-ping"></span>
               <span>Ready to process in local RAM</span>
             </div>
-            <button id="execute-btn" onclick="executeCurrentTool()" class="w-full sm:w-auto btn-boxy px-10 py-4 bg-brand-yellow text-black text-lg font-black flex items-center justify-center gap-3">
+            <button id="execute-btn" onclick="executeCurrentTool()" class="w-full sm:w-auto btn-boxy animate-glow-yellow px-10 py-4 bg-brand-yellow text-black text-lg font-black flex items-center justify-center gap-3">
               <span id="execute-btn-text">Execute Tool</span>
               <span class="material-symbols-outlined text-2xl font-black" id="execute-btn-icon">arrow_forward</span>
             </button>
@@ -2110,19 +2277,19 @@
       if (!btnHome || !btnUniv || !btnTools) return;
       
       [btnHome, btnUniv, btnTools].forEach(btn => {
-        btn.classList.remove('text-brand-lime', 'text-brand-pink', 'text-brand-yellow', 'font-black');
+        btn.classList.remove('text-brand-lime', 'text-brand-pink', 'text-brand-yellow', 'font-black', 'active-dock-pill');
         btn.classList.add('text-neutral-400');
       });
 
       if (route === 'home') {
         btnHome.classList.remove('text-neutral-400');
-        btnHome.classList.add('text-brand-lime', 'font-black');
+        btnHome.classList.add('text-brand-lime', 'font-black', 'active-dock-pill');
       } else if (route === 'universal') {
         btnUniv.classList.remove('text-neutral-400');
-        btnUniv.classList.add('text-brand-pink', 'font-black');
+        btnUniv.classList.add('text-brand-pink', 'font-black', 'active-dock-pill');
       } else {
         btnTools.classList.remove('text-neutral-400');
-        btnTools.classList.add('text-brand-yellow', 'font-black');
+        btnTools.classList.add('text-brand-yellow', 'font-black', 'active-dock-pill');
       }
     }
 
@@ -2142,6 +2309,9 @@
             history.pushState(null, '', window.location.pathname);
           }
           homeView.classList.remove('hidden');
+          homeView.classList.remove('view-enter');
+          void homeView.offsetWidth;
+          homeView.classList.add('view-enter');
           toolView.classList.add('hidden');
           if (universalView) universalView.classList.add('hidden');
           announceA11y("Navigated to PDFZen homepage");
@@ -2151,7 +2321,12 @@
           }
           homeView.classList.add('hidden');
           toolView.classList.add('hidden');
-          if (universalView) universalView.classList.remove('hidden');
+          if (universalView) {
+            universalView.classList.remove('hidden');
+            universalView.classList.remove('view-enter');
+            void universalView.offsetWidth;
+            universalView.classList.add('view-enter');
+          }
           initUniversalDropZone();
           announceA11y("Navigated to Universal Format Converter workspace");
           window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2165,6 +2340,9 @@
             homeView.classList.add('hidden');
             if (universalView) universalView.classList.add('hidden');
             toolView.classList.remove('hidden');
+            toolView.classList.remove('view-enter');
+            void toolView.offsetWidth;
+            toolView.classList.add('view-enter');
             setupToolWorkspace(tool);
             announceA11y(`Navigated to ${tool.name} tool workspace`);
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2177,18 +2355,24 @@
 
     function filterCategory(cat, btn) {
       document.querySelectorAll('.cat-pill').forEach(b => {
-        b.className = "cat-pill btn-boxy px-4 py-2 bg-card-bg text-neutral-300 hover:text-black hover:bg-brand-yellow text-xs font-black";
+        b.className = "cat-pill btn-boxy px-4 py-2 bg-card-bg text-neutral-300 hover:text-black hover:bg-brand-yellow text-xs font-black whitespace-nowrap shrink-0";
         b.setAttribute('aria-selected', 'false');
         b.style.backgroundColor = 'var(--card-bg)';
       });
-      btn.className = "cat-pill btn-boxy px-4 py-2 bg-brand-yellow text-black text-xs font-black";
+      btn.className = "cat-pill btn-boxy px-4 py-2 bg-brand-yellow text-black text-xs font-black whitespace-nowrap shrink-0";
       btn.setAttribute('aria-selected', 'true');
       btn.style.backgroundColor = '';
 
       const cards = document.querySelectorAll('.tool-item-card');
+      let visibleIdx = 0;
       cards.forEach(card => {
         if (cat === 'all' || card.getAttribute('data-category') === cat) {
           card.style.display = 'flex';
+          card.classList.remove('card-anim-in');
+          void card.offsetWidth;
+          card.style.animationDelay = `${visibleIdx * 0.022}s`;
+          card.classList.add('card-anim-in');
+          visibleIdx++;
         } else {
           card.style.display = 'none';
         }
@@ -4224,14 +4408,31 @@
     }
 
     function updateProgress(percent, statusText) {
-      document.getElementById('progress-bar-fill').style.width = `${percent}%`;
-      document.getElementById('progress-percentage').innerText = `${percent}%`;
-      if (statusText) document.getElementById('progress-status').innerText = statusText;
+      const fill = document.getElementById('progress-bar-fill');
+      if (fill) {
+        fill.style.width = `${percent}%`;
+        if (!fill.classList.contains('progress-shimmer')) fill.classList.add('progress-shimmer');
+      }
+      const pctEl = document.getElementById('progress-percentage');
+      if (pctEl) pctEl.innerText = `${percent}%`;
+      if (statusText) {
+        const statEl = document.getElementById('progress-status');
+        if (statEl) statEl.innerText = statusText;
+      }
     }
 
     function showDownloadStep() {
+      if (!processedBlob) return;
       document.getElementById('progress-step').classList.add('hidden');
       document.getElementById('download-step').classList.remove('hidden');
+
+      if (!(processedBlob instanceof Blob)) {
+        if (processedBlob instanceof Uint8Array || processedBlob instanceof ArrayBuffer) {
+          processedBlob = new Blob([processedBlob], { type: 'application/pdf' });
+        } else {
+          return;
+        }
+      }
 
       const btn = document.getElementById('main-download-btn');
       const url = URL.createObjectURL(processedBlob);
@@ -5912,7 +6113,7 @@ ${rowsXml}  </sheetData>
       if (type === 'success') { bg = 'bg-brand-lime text-black'; icon = 'check_circle'; }
       if (type === 'error') { bg = 'bg-red-500 text-white'; icon = 'error'; }
 
-      toast.className = `pointer-events-auto p-4 rounded-xl border-3 border-black boxy-shadow ${bg} flex items-center gap-3 text-sm font-black transform transition-all duration-300 translate-y-4 opacity-0`;
+      toast.className = `toast-item-anim pointer-events-auto p-4 rounded-xl border-3 border-black boxy-shadow ${bg} flex items-center gap-3 text-sm font-black transition-all duration-300`;
       toast.innerHTML = `
         <span class="material-symbols-outlined text-2xl font-black">${icon}</span>
         <span>${message}</span>
@@ -5920,13 +6121,10 @@ ${rowsXml}  </sheetData>
       container.appendChild(toast);
 
       setTimeout(() => {
-        toast.classList.remove('translate-y-4', 'opacity-0');
-      }, 10);
-
-      setTimeout(() => {
-        toast.classList.add('opacity-0', 'translate-x-6');
+        toast.style.transform = 'translateY(16px) scale(0.95)';
+        toast.style.opacity = '0';
         setTimeout(() => toast.remove(), 300);
-      }, 4000);
+      }, 4200);
     }
 
     function triggerConfetti() {
@@ -5985,6 +6183,12 @@ ${rowsXml}  </sheetData>
       const modal = document.getElementById('search-modal');
       modal.classList.remove('hidden');
       modal.classList.add('flex');
+      const dialog = modal.querySelector('.modal-spring-box');
+      if (dialog) {
+        dialog.classList.remove('modal-spring-box');
+        void dialog.offsetWidth;
+        dialog.classList.add('modal-spring-box');
+      }
       const input = document.getElementById('tool-search-input');
       if (input) {
         input.value = '';
@@ -6131,6 +6335,9 @@ ${rowsXml}  </sheetData>
     }
 
     function resetUniversalWorkspace() {
+      if (univState && univState.downloadTimer) {
+        try { clearTimeout(univState.downloadTimer); } catch (e) {}
+      }
       if (univState && univState.downloadUrl) {
         try { URL.revokeObjectURL(univState.downloadUrl); } catch (e) {}
       }
@@ -6139,6 +6346,7 @@ ${rowsXml}  </sheetData>
         univState.bytes = null;
         univState.convertedBlob = null;
         univState.downloadUrl = null;
+        univState.downloadTimer = null;
       }
       univState = window.univState = {
         file: null,
@@ -6147,7 +6355,8 @@ ${rowsXml}  </sheetData>
         targetFormat: null,
         convertedBlob: null,
         convertedFilename: 'converted_output',
-        downloadUrl: null
+        downloadUrl: null,
+        downloadTimer: null
       };
       const fileInput = document.getElementById('univ-file-input');
       if (fileInput) fileInput.value = '';
@@ -6589,7 +6798,10 @@ ${rowsXml}  </sheetData>
       const status = document.getElementById('univ-progress-status');
       const sub = document.getElementById('univ-progress-substatus');
 
-      if (fill) fill.style.width = `${pct}%`;
+      if (fill) {
+        fill.style.width = `${pct}%`;
+        if (!fill.classList.contains('progress-shimmer')) fill.classList.add('progress-shimmer');
+      }
       if (text) text.innerText = `${pct}%`;
       if (status && statusText) status.innerText = statusText;
       if (sub && subText) sub.innerText = subText;
@@ -6715,7 +6927,8 @@ ${rowsXml}  </sheetData>
         }
 
         updateUnivProgress(100, "Done!", "Conversion successful!");
-        setTimeout(() => {
+        if (univState.downloadTimer) clearTimeout(univState.downloadTimer);
+        univState.downloadTimer = setTimeout(() => {
           showUnivDownloadStep();
           triggerConfetti();
         }, 300);
@@ -6729,11 +6942,16 @@ ${rowsXml}  </sheetData>
     }
 
     function showUnivDownloadStep() {
+      if (!univState || !univState.convertedBlob) return;
       document.getElementById('univ-progress-step')?.classList.add('hidden');
       document.getElementById('univ-download-step')?.classList.remove('hidden');
 
-      if (univState.convertedBlob instanceof Uint8Array || univState.convertedBlob instanceof ArrayBuffer) {
-        univState.convertedBlob = new Blob([univState.convertedBlob], { type: 'application/octet-stream' });
+      if (!(univState.convertedBlob instanceof Blob)) {
+        if (univState.convertedBlob instanceof Uint8Array || univState.convertedBlob instanceof ArrayBuffer) {
+          univState.convertedBlob = new Blob([univState.convertedBlob], { type: 'application/octet-stream' });
+        } else {
+          return;
+        }
       }
 
       if (univState.downloadUrl) {
