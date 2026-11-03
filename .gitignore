@@ -1,0 +1,6 @@
+node_modules/
+.chrome_profile/
+.chrome_univ_profile*
+*.log
+.DS_Store
+Thumbs.db

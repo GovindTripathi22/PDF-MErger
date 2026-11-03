@@ -1,0 +1,23 @@
+{
+  "name": "pdfzen",
+  "version": "1.0.0",
+  "description": "Gen Z Aesthetic Client-Side PDF Tools Suite",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "test": "node test_suite.js"
+  },
+  "keywords": [
+    "pdf",
+    "ilovepdf",
+    "tools",
+    "wasm",
+    "pdf-lib"
+  ],
+  "author": "PDFZen",
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer-core": "^25.16.0"
+  }
+}
