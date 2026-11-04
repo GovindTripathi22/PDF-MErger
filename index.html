@@ -5239,6 +5239,7 @@ ${rowsXml}  </sheetData>
         if (format === 'n-of-total') text = `Page ${num} of ${total}`;
         else if (format === 'slash') text = `${num} / ${total}`;
         else text = `${num}`;
+        text = sanitizeWinAnsi(text, false);
 
         const textWidth = font.widthOfTextAtSize(text, size);
         const { width, height } = page.getSize();
@@ -5267,7 +5268,8 @@ ${rowsXml}  </sheetData>
 
     // 15. WATERMARK
     async function runWatermark() {
-      const text = document.getElementById('watermark-text').value.trim() || 'CONFIDENTIAL';
+      const rawWatermark = document.getElementById('watermark-text').value.trim() || 'CONFIDENTIAL';
+      const text = sanitizeWinAnsi(rawWatermark, false);
       const opacity = parseFloat(document.getElementById('watermark-opacity').value);
       const angle = parseFloat(document.getElementById('watermark-angle').value);
       const size = parseFloat(document.getElementById('watermark-size').value);
@@ -5335,7 +5337,8 @@ ${rowsXml}  </sheetData>
             borderColor: PDFLib.rgb(0.8, 0.8, 0.8),
             borderWidth: 1
           });
-          page.drawText(`SECURE & CONFIDENTIAL DOCUMENT — PROTECTED (P. ${i + 1}/${pages.length})`, {
+          const protectHeader = sanitizeWinAnsi(`SECURE & CONFIDENTIAL DOCUMENT — PROTECTED (P. ${i + 1}/${pages.length})`, false);
+          page.drawText(protectHeader, {
             x: 16,
             y: height - 14,
             size: 8,
@@ -7136,7 +7139,8 @@ ${rowsXml}  </sheetData>
       const font = await doc.embedFont(PDFLib.StandardFonts.HelveticaBold);
       const bodyFont = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
 
-      slides.forEach((text, idx) => {
+      slides.forEach((rawSlideText, idx) => {
+        const text = sanitizeWinAnsi(rawSlideText, true);
         const page = doc.addPage([842, 595]); // A4 Landscape
         page.drawRectangle({
           x: 0, y: 0, width: 842, height: 595,
@@ -7148,7 +7152,7 @@ ${rowsXml}  </sheetData>
           borderColor: PDFLib.rgb(0, 0, 0),
           borderWidth: 3
         });
-        page.drawText(`SLIDE ${idx + 1}`, {
+        page.drawText(sanitizeWinAnsi(`SLIDE ${idx + 1}`, false), {
           x: 60, y: 515, size: 24, font,
           color: PDFLib.rgb(0.06, 0.09, 0.16)
         });
@@ -7159,19 +7163,22 @@ ${rowsXml}  </sheetData>
           const words = para.split(/\s+/).filter(Boolean);
           let curLine = '';
           for (const w of words) {
-            if ((curLine + ' ' + w).trim().length > 70) {
+            const candidate = (curLine + ' ' + w).trim();
+            if (candidate.length > 70) {
               if (curLine) {
-                page.drawText(curLine, { x: 60, y: curY, size: 14, font: bodyFont, color: PDFLib.rgb(0.2, 0.25, 0.3) });
+                const safeLine = sanitizeWinAnsi(curLine, false);
+                page.drawText(safeLine, { x: 60, y: curY, size: 14, font: bodyFont, color: PDFLib.rgb(0.2, 0.25, 0.3) });
                 curY -= 22;
                 if (curY < 80) break;
               }
               curLine = w;
             } else {
-              curLine = (curLine + ' ' + w).trim();
+              curLine = candidate;
             }
           }
           if (curLine && curY >= 80) {
-            page.drawText(curLine, { x: 60, y: curY, size: 14, font: bodyFont, color: PDFLib.rgb(0.2, 0.25, 0.3) });
+            const safeLine = sanitizeWinAnsi(curLine, false);
+            page.drawText(safeLine, { x: 60, y: curY, size: 14, font: bodyFont, color: PDFLib.rgb(0.2, 0.25, 0.3) });
             curY -= 26;
           }
           if (curY < 80) break;
@@ -7707,12 +7714,12 @@ ${rowsXml}  </sheetData>
       if (!docXmlFile) throw new Error("Invalid .docx file: word/document.xml missing.");
       const docXml = await docXmlFile.async("text");
 
-      const paragraphs = extractDocxParagraphs(docXml);
+      const paragraphs = extractDocxParagraphs(docXml).map(p => sanitizeWinAnsi(p, true));
       updateUnivProgress(60, "Formatting paragraphs into PDF layout...");
       const orientation = document.getElementById('univ-opt-orientation')?.value || 'auto';
       const pageSize = document.getElementById('univ-opt-pagesize')?.value || 'a4';
       const theme = document.getElementById('univ-opt-theme')?.value || 'clean';
-      const docTitle = document.getElementById('univ-opt-doc-title')?.value || baseName;
+      const docTitle = sanitizeWinAnsi(document.getElementById('univ-opt-doc-title')?.value || baseName, false);
       const font = document.getElementById('univ-opt-doc-font')?.value || 'Helvetica';
 
       const pdfBytes = await generateTextPdf(paragraphs.join('\n\n'), { 
@@ -7786,7 +7793,7 @@ ${rowsXml}  </sheetData>
       const orientation = document.getElementById('univ-opt-orientation')?.value || 'auto';
       const pageSize = document.getElementById('univ-opt-pagesize')?.value || 'a4';
       const theme = document.getElementById('univ-opt-theme')?.value || 'lime';
-      const docTitle = document.getElementById('univ-opt-doc-title')?.value || `${baseName} Report`;
+      const docTitle = sanitizeWinAnsi(document.getElementById('univ-opt-doc-title')?.value || `${baseName} Report`, false);
       const font = document.getElementById('univ-opt-doc-font')?.value || 'Helvetica';
 
       const pdfBytes = await generateTablePdf(parsed.headers, parsed.rows, {
@@ -7946,11 +7953,12 @@ ${rowsXml}  </sheetData>
     // Text / Markdown to PDF
     async function runUnivTextToPdf(srcFormat, baseName) {
       updateUnivProgress(40, "Calculating typographic margins & pagination...");
-      const text = new TextDecoder().decode(univState.bytes);
+      const rawText = new TextDecoder().decode(univState.bytes);
+      const text = sanitizeWinAnsi(rawText, true);
       const orientation = document.getElementById('univ-opt-orientation')?.value || 'auto';
       const pageSize = document.getElementById('univ-opt-pagesize')?.value || 'a4';
       const theme = document.getElementById('univ-opt-theme')?.value || 'clean';
-      const docTitle = document.getElementById('univ-opt-doc-title')?.value || baseName;
+      const docTitle = sanitizeWinAnsi(document.getElementById('univ-opt-doc-title')?.value || baseName, false);
       const font = document.getElementById('univ-opt-doc-font')?.value || 'Helvetica';
 
       const pdfBytes = await generateTextPdf(text, { 
@@ -8078,6 +8086,149 @@ ${rowsXml}  </sheetData>
         col = col * 26 + (upper.charCodeAt(i) - 64);
       }
       return col - 1;
+    }
+
+    // --- UNICODE TO WINANSI SANITIZATION ENGINE ---
+    // Standard PDF-Lib fonts (Helvetica, TimesRoman, Courier) strictly require WinAnsi (Windows-1252: 218 code points).
+    // Text containing arrows (e.g. "→" 0x2192), typographic quotes, bullets, dashes, math symbols, or emojis
+    // will throw "WinAnsi cannot encode ..." when measured with font.widthOfTextAtSize or drawn with page.drawText.
+
+    const WIN_ANSI_SET = new Uint8Array(65536);
+    for (let i = 32; i <= 126; i++) WIN_ANSI_SET[i] = 1;
+    for (let i = 160; i <= 255; i++) WIN_ANSI_SET[i] = 1;
+    const WIN_ANSI_EXTRAS = [
+      338, 339, 352, 353, 376, 381, 382, 402, 710, 732,
+      8211, 8212, 8216, 8217, 8218, 8220, 8221, 8222, 8224, 8225,
+      8226, 8230, 8240, 8249, 8250, 8364, 8482
+    ];
+    for (let i = 0; i < WIN_ANSI_EXTRAS.length; i++) WIN_ANSI_SET[WIN_ANSI_EXTRAS[i]] = 1;
+
+    const UNICODE_TO_WINANSI_MAP = {
+      // Right arrows
+      '→': '->', '⟶': '->', '➔': '->', '➜': '->', '➝': '->', '➞': '->', '➟': '->',
+      '⇢': '->', '⇨': '->', '⇾': '->', '↳': '->', '↵': '->', '↘': '->', '↗': '->',
+      '⇒': '=>', '⟹': '=>', '⇛': '>>', '►': '>', '▶': '>', '▸': '>', '▹': '>', '↦': '|->',
+      // Left arrows
+      '←': '<-', '⟵': '<-', '⇠': '<-', '⇦': '<-', '⇽': '<-', '↰': '<-', '↩': '<-',
+      '↙': '<-', '↖': '<-', '⇐': '<=', '⟸': '<=', '⇚': '<<', '◄': '<', '◀': '<', '◂': '<', '◃': '<',
+      // Bidirectional, vertical & diagonal arrows
+      '↔': '<->', '⟷': '<->', '⇄': '<->', '⇆': '<->', '⇔': '<=>', '⟺': '<=>',
+      '↕': '^v', '⇕': '^v', '↑': '^', '⇑': '^', '▲': '^', '▴': '^',
+      '↓': 'v', '⇓': 'v', '▼': 'v', '▾': 'v',
+      // Typographic quotes & apostrophes
+      '“': '"', '”': '"', '„': '"', '‟': '"', '″': '"', '‶': '"',
+      '‘': "'", '’': "'", '‚': "'", '‛': "'", '′': "'", '‵': "'",
+      '«': '"', '»': '"', '‹': '<', '›': '>',
+      // Dashes, hyphens & horizontal bars
+      '—': '--', '–': '-', '―': '--', '‒': '-', '‑': '-', '−': '-', '∼': '~',
+      // Bullets, geometric icons & list markers
+      '•': '*', '‣': '*', '◦': '*', '⁃': '-', '■': '*', '▪': '*', '▫': '*',
+      '●': '*', '○': '*', '◆': '*', '◇': '*', '✓': '[v]', '✔': '[v]', '☑': '[v]',
+      '✗': '[x]', '✘': '[x]', '☒': '[x]', '✕': '[x]', '✖': '[x]',
+      '□': '[ ]', '◻': '[ ]', '☐': '[ ]', '★': '*', '☆': '*', '✦': '*', '✧': '*',
+      // Mathematical operators & logic
+      '≤': '<=', '≥': '>=', '≠': '!=', '≈': '~=', '≡': '===', '±': '+/-', '∓': '-+',
+      '×': '*', '÷': '/', '⁄': '/', '∞': 'inf', '∑': 'sum', '∏': 'prod', '√': 'sqrt',
+      '∫': 'int', '∂': 'd', '∇': 'grad', '∈': 'in', '∉': 'not in', '⊂': 'subset',
+      '⊃': 'supset', '⊆': 'subset=', '⊇': 'supset=', '∧': 'AND', '∨': 'OR', '¬': 'NOT',
+      '…': '...', '·': '.', '°': ' deg',
+      // Currencies
+      '₹': 'Rs.', '₽': 'RUB ', '₩': 'KRW ', '₿': 'BTC ', '₺': 'TRY ', '¢': 'c',
+      '¥': 'JPY ', '£': 'GBP ',
+      // Ligatures
+      'ﬁ': 'fi', 'ﬂ': 'fl', 'ﬀ': 'ff', 'ﬃ': 'ffi', 'ﬄ': 'ffl', 'ﬅ': 'ft', 'ﬆ': 'st',
+      'æ': 'ae', 'œ': 'oe', 'Æ': 'AE', 'Œ': 'OE',
+      // Fractions
+      '½': '1/2', '¼': '1/4', '¾': '3/4', '⅓': '1/3', '⅔': '2/3', '⅛': '1/8', '⅜': '3/8', '⅝': '5/8', '⅞': '7/8',
+      // Superscripts & Subscripts
+      '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9',
+      '₀': '0', '₁': '1', '₂': '2', '₃': '3', '₄': '4', '₅': '5', '₆': '6', '₇': '7', '₈': '8', '₉': '9',
+      '⁺': '+', '⁻': '-', '⁼': '=', '⁽': '(', '⁾': ')',
+      '₊': '+', '₋': '-', '₌': '=', '₍': '(', '₎': ')',
+      // Special Latin
+      'ł': 'l', 'Ł': 'L', 'đ': 'd', 'Đ': 'D', 'ø': 'o', 'Ø': 'O', 'ß': 'ss',
+      // Common Emojis
+      '⚠️': '[!]', '❌': '[X]', '✔️': '[V]', '❤️': '<3', '⭐': '*', '💡': '[i]'
+    };
+
+    function sanitizeWinAnsi(str, preserveNewlines = true) {
+      if (str == null) return '';
+      let s = String(str);
+      if (!s) return '';
+
+      // Normalize newlines and convert tabs to spaces
+      s = s.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      s = s.replace(/\t/g, '    ');
+
+      // Strip zero-width, invisible formatting, and BOM
+      s = s.replace(/[\u200B-\u200D\uFEFF\u2060\u00AD\u200E\u200F]/g, '');
+
+      // Replace Unicode spaces with standard space
+      s = s.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ');
+
+      // Convert fullwidth ASCII (0xFF01-0xFF5E)
+      s = s.replace(/[\uFF01-\uFF5E]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+
+      // Fast dictionary transliteration for mapped Unicode characters
+      for (const [key, val] of Object.entries(UNICODE_TO_WINANSI_MAP)) {
+        if (s.includes(key)) {
+          s = s.split(key).join(val);
+        }
+      }
+
+      // Strip unmapped surrogate pairs (emojis)
+      s = s.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '');
+
+      // Decompose accents and strip combining diacritics
+      s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+      // Final pass: ensure every code point is strictly encodable by WinAnsi
+      let out = '';
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (ch === '\n') {
+          out += preserveNewlines ? '\n' : ' ';
+          continue;
+        }
+        const code = ch.charCodeAt(0);
+        if (code < 32) continue; // Skip unprintable control codes
+        if (WIN_ANSI_SET[code]) {
+          out += ch;
+        } else {
+          out += '?'; // Safe fallback for unencodable characters
+        }
+      }
+      return out;
+    }
+
+    // Defensive protection: patch PDFLib.PDFPage.prototype.drawText and PDFLib.PDFFont.prototype.widthOfTextAtSize
+    function installPdfLibWinAnsiProtection() {
+      try {
+        if (typeof window !== 'undefined' && window.PDFLib) {
+          if (window.PDFLib.PDFFont && window.PDFLib.PDFFont.prototype && !window.PDFLib.PDFFont.prototype.__winAnsiPatched) {
+            const origWidth = window.PDFLib.PDFFont.prototype.widthOfTextAtSize;
+            window.PDFLib.PDFFont.prototype.widthOfTextAtSize = function(text, size) {
+              const safeText = sanitizeWinAnsi(text, false);
+              return origWidth.call(this, safeText, size);
+            };
+            window.PDFLib.PDFFont.prototype.__winAnsiPatched = true;
+          }
+          if (window.PDFLib.PDFPage && window.PDFLib.PDFPage.prototype && !window.PDFLib.PDFPage.prototype.__winAnsiPatched) {
+            const origDrawText = window.PDFLib.PDFPage.prototype.drawText;
+            window.PDFLib.PDFPage.prototype.drawText = function(text, options) {
+              const safeText = sanitizeWinAnsi(text, true);
+              return origDrawText.call(this, safeText, options);
+            };
+            window.PDFLib.PDFPage.prototype.__winAnsiPatched = true;
+          }
+        }
+      } catch (e) {
+        console.warn("Could not patch PDFLib prototypes:", e);
+      }
+    }
+    installPdfLibWinAnsiProtection();
+    if (typeof document !== 'undefined') {
+      document.addEventListener('DOMContentLoaded', installPdfLibWinAnsiProtection);
     }
 
     function extractDocxParagraphs(docXml) {
@@ -8261,7 +8412,7 @@ ${rowsXml}  </sheetData>
       let currentPage = doc.addPage([pageWidth, pageHeight]);
       let y = pageHeight - margin - 25;
       
-      currentPage.drawText(options.title || "Data Table Report", {
+      currentPage.drawText(sanitizeWinAnsi(options.title || "Data Table Report", false), {
         x: margin,
         y: pageHeight - margin - 15,
         size: 15,
@@ -8288,7 +8439,7 @@ ${rowsXml}  </sheetData>
         
         headers.forEach((h, i) => {
           const colX = margin + (i * colWidth) + 6;
-          const text = String(h).slice(0, 24);
+          const text = sanitizeWinAnsi(String(h), false).slice(0, 24);
           page.drawText(text, {
             x: colX,
             y: atY - (headerHeight / 2) - 4,
@@ -8324,7 +8475,7 @@ ${rowsXml}  </sheetData>
         });
         
         for (let c = 0; c < colCount; c++) {
-          const cellVal = String(row[c] ?? '').slice(0, 28);
+          const cellVal = sanitizeWinAnsi(String(row[c] ?? ''), false).slice(0, 28);
           const cellX = margin + (c * colWidth) + 6;
           currentPage.drawText(cellVal, {
             x: cellX,
@@ -8387,7 +8538,8 @@ ${rowsXml}  </sheetData>
       let y = pageHeight - margin;
       
       if (options.title) {
-        currentPage.drawText(options.title, {
+        const cleanTitle = sanitizeWinAnsi(options.title, false);
+        currentPage.drawText(cleanTitle, {
           x: margin,
           y: y - 10,
           size: 16,
@@ -8397,11 +8549,12 @@ ${rowsXml}  </sheetData>
         y -= 35;
       }
 
-      const lines = text.split(/\r?\n/);
+      const safeText = sanitizeWinAnsi(text, true);
+      const lines = safeText.split(/\r?\n/);
       
       for (let rawLine of lines) {
         const isHeader = rawLine.startsWith('#');
-        const cleanLine = rawLine.replace(/^#+\s*/, '');
+        const cleanLine = sanitizeWinAnsi(rawLine.replace(/^#+\s*/, ''), false);
         const currentFont = isHeader ? fontBold : font;
         const currentSize = isHeader ? 13 : 10;
         const currentLineHeight = isHeader ? 22 : lineHeight;

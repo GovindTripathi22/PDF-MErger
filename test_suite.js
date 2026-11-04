@@ -631,8 +631,72 @@ async function runAllTests() {
 
   console.log('  ✓ Unlimited capacity copy, 5 GB sensitive tools cap, formatBytes TB/PB scaling, buffer deallocation, and FAQ verified.');
 
+  // --------------------------------------------------------------------------
+  // TEST 21: Unicode-to-WinAnsi Transliteration & Sanitization Guard
+  // --------------------------------------------------------------------------
+  console.log('\n▶ Test 21: Unicode-to-WinAnsi Transliteration & Sanitization Guard...');
+
+  const sanitizeWinAnsiFnMatch = htmlContent.match(/function sanitizeWinAnsi\(str,\s*preserveNewlines\s*=\s*true\)\s*\{[\s\S]*?\n    \}/);
+  assert.ok(sanitizeWinAnsiFnMatch, 'sanitizeWinAnsi function must exist in index.html');
+
+  const winAnsiSetMatch = htmlContent.match(/const WIN_ANSI_SET = new Uint8Array\(65536\);[\s\S]*?const UNICODE_TO_WINANSI_MAP = \{[\s\S]*?\};\n/);
+  assert.ok(winAnsiSetMatch, 'WIN_ANSI_SET and UNICODE_TO_WINANSI_MAP must exist in index.html');
+
+  const winAnsiSandbox = {};
+  vm.createContext(winAnsiSandbox);
+  vm.runInContext(`${winAnsiSetMatch[0]}\n${sanitizeWinAnsiFnMatch[0]}`, winAnsiSandbox);
+  const sanitizeWinAnsi = winAnsiSandbox.sanitizeWinAnsi;
+  const WIN_ANSI_SET = vm.runInContext('WIN_ANSI_SET', winAnsiSandbox);
+
+  // 21A: Right and left arrows (e.g. WinAnsi cannot encode "→" 0x2192)
+  const arrowTest = 'Conversion failed: WinAnsi cannot encode "→" (0x2192) Step 1 → Step 2 ← Back ⇒ Next';
+  const cleanArrows = sanitizeWinAnsi(arrowTest);
+  assert.strictEqual(cleanArrows, 'Conversion failed: WinAnsi cannot encode "->" (0x2192) Step 1 -> Step 2 <- Back => Next');
+
+  // 21B: Typographic quotes, bullets, and dashes
+  const typographyTest = '“Smart quotes” & ‘apostrophes’ • Bullet item — Em dash – En dash';
+  const cleanTypography = sanitizeWinAnsi(typographyTest);
+  assert.strictEqual(cleanTypography, '"Smart quotes" & \'apostrophes\' * Bullet item -- Em dash - En dash');
+
+  // 21C: Math, logic, tabs, and currencies
+  const mathTest = 'Math: x ≤ 10, y ≥ 5, z ≠ 0, approx ≈ 3.14, ±1, 10 × 2 ÷ 5 = 4, inf ∞; Cost: ₹1500\tTabs';
+  const cleanMath = sanitizeWinAnsi(mathTest);
+  assert.strictEqual(cleanMath, 'Math: x <= 10, y >= 5, z != 0, approx ~= 3.14, +/-1, 10 * 2 / 5 = 4, inf inf; Cost: Rs.1500    Tabs');
+
+  // 21D: Emojis and diacritics
+  const emojiTest = 'Launch: 🚀 Feature release ⚠️ Warning ⭐ Star; Accents: Héllo wörld čťž';
+  const cleanEmoji = sanitizeWinAnsi(emojiTest);
+  assert.strictEqual(cleanEmoji, 'Launch:  Feature release [!] Warning * Star; Accents: Hello world ctz');
+
+  // 21E: Null, undefined, empty, number handling
+  assert.strictEqual(sanitizeWinAnsi(''), '');
+  assert.strictEqual(sanitizeWinAnsi(null), '');
+  assert.strictEqual(sanitizeWinAnsi(undefined), '');
+  assert.strictEqual(sanitizeWinAnsi(12345), '12345');
+
+  // 21F: Multi-line preservation
+  const multiline = "Line 1\r\nLine 2\nLine 3";
+  assert.strictEqual(sanitizeWinAnsi(multiline, true), "Line 1\nLine 2\nLine 3");
+  assert.strictEqual(sanitizeWinAnsi(multiline, false), "Line 1 Line 2 Line 3");
+
+  // 21G: Universal encodability assertion: every output character MUST be \n or in WIN_ANSI_SET
+  for (const str of [cleanArrows, cleanTypography, cleanMath, cleanEmoji]) {
+    for (const ch of str) {
+      if (ch === '\n') continue;
+      assert.ok(WIN_ANSI_SET[ch.charCodeAt(0)], `Character "${ch}" (code ${ch.charCodeAt(0)}) must be valid in WIN_ANSI_SET`);
+    }
+  }
+
+  // 21H: Assert integration across all document conversion pipelines in index.html
+  assert.ok(htmlContent.includes('generateTextPdf'), 'generateTextPdf must exist');
+  assert.ok(htmlContent.includes('generateTablePdf'), 'generateTablePdf must exist');
+  assert.ok(htmlContent.includes('sanitizeWinAnsi(options.title'), 'options.title must be sanitized in PDF engines');
+  assert.ok(htmlContent.includes('installPdfLibWinAnsiProtection'), 'installPdfLibWinAnsiProtection must exist');
+
+  console.log('  ✓ WinAnsi arrow transliteration, quotes, bullets, dashes, math, emoji safety, and pipeline bindings verified.');
+
   console.log('\n====================================================');
-  console.log('🎉 ALL 20 TECHNICAL AUDIT VERIFICATION TESTS PASSED!');
+  console.log('🎉 ALL 21 TECHNICAL AUDIT VERIFICATION TESTS PASSED!');
   console.log('====================================================');
 }
 

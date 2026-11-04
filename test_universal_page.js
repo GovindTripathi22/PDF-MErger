@@ -219,6 +219,32 @@ async function testUniversalPage() {
     if (!txtResult.downloadName.endsWith('.pdf')) throw new Error('TXT to PDF conversion failed to output .pdf');
     if (txtResult.blobSize === 0) throw new Error('TXT to PDF output blob is empty');
 
+    // Test TXT -> PDF with Unicode characters (arrows, smart quotes, bullets, dashes, math)
+    const unicodeTxtResult = await page.evaluate(async () => {
+      resetUniversalWorkspace();
+      const txtContent = "Header #1: Technical Spec → Roadmap\n" +
+                         "• Bullet point 1: A ← B ⇒ C (Arrows tested)\n" +
+                         "• Bullet point 2: “Smart quotes” & ‘apostrophes’\n" +
+                         "• Bullet point 3: Em dash — En dash – Math: x ≤ 10, y ≥ 5, z ≠ 0\n" +
+                         "• Price: ₹1,500 INR\tTab separated details\n" +
+                         "• Emoji test: 🚀 Rocket launch ⚠️ Warning";
+      const file = new File([txtContent], "unicode_notes.txt", { type: "text/plain" });
+      await handleUniversalFileInput(file);
+      
+      selectUniversalTarget('pdf');
+      await executeUniversalConversion();
+      
+      return {
+        downloadName: univState.convertedFilename,
+        isBlob: univState.convertedBlob instanceof Blob,
+        blobSize: univState.convertedBlob ? univState.convertedBlob.size : 0
+      };
+    });
+
+    console.log('  ✓ Unicode TXT -> PDF conversion result (WinAnsi Safe):', unicodeTxtResult);
+    if (!unicodeTxtResult.downloadName.endsWith('.pdf')) throw new Error('Unicode TXT to PDF conversion failed to output .pdf');
+    if (unicodeTxtResult.blobSize === 0) throw new Error('Unicode TXT to PDF output blob is empty');
+
     // ----------------------------------------------------
     // STEP 7: Reset & Mobile Dock Integration
     // ----------------------------------------------------
