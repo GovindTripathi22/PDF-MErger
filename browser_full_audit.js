@@ -214,11 +214,13 @@ async function runBrowserAudit() {
 
     // Test dock button navigation
     await page.click('#dock-btn-universal');
+    await new Promise(r => setTimeout(r, 200));
     const isUnivActive = await page.evaluate(() => !document.getElementById('view-universal').classList.contains('hidden'));
     console.log(`  ✓ Tapped Mobile Dock "Convert" -> Universal Tab Active: ${isUnivActive}`);
     if (!isUnivActive) throw new Error('Tapping Convert dock button did not show view-universal');
 
     await page.click('#dock-btn-home');
+    await new Promise(r => setTimeout(r, 200));
     const isHomeActive = await page.evaluate(() => !document.getElementById('view-home').classList.contains('hidden'));
     console.log(`  ✓ Tapped Mobile Dock "Home" -> Home Active: ${isHomeActive}`);
     if (!isHomeActive) throw new Error('Tapping Home dock button did not show view-home');

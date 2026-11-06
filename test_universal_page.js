@@ -245,6 +245,72 @@ async function testUniversalPage() {
     if (!unicodeTxtResult.downloadName.endsWith('.pdf')) throw new Error('Unicode TXT to PDF conversion failed to output .pdf');
     if (unicodeTxtResult.blobSize === 0) throw new Error('Unicode TXT to PDF output blob is empty');
 
+    // Test Exact High-Fidelity DOCX -> PDF Conversion (with tables, colors, arrows, and multi-page layout)
+    const docxToPdfResult = await page.evaluate(async () => {
+      resetUniversalWorkspace();
+      
+      const zip = new JSZip();
+      zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`);
+
+      zip.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`);
+
+      zip.file('word/document.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:pPr><w:jc w:val="center"/></w:pPr>
+      <w:r><w:rPr><w:b/><w:sz w:val="48"/><w:color w:val="1E40AF"/></w:rPr><w:t>Quarterly Executive Summary → 2026</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:r><w:rPr><w:i/><w:color w:val="4B5563"/></w:rPr><w:t>Preserving exact document styles, tables &amp; colors</w:t></w:r>
+    </w:p>
+    <w:tbl>
+      <w:tblPr><w:tblBorders><w:top w:val="single" w:sz="6" w:color="2563EB"/><w:bottom w:val="single" w:sz="6" w:color="2563EB"/></w:tblBorders></w:tblPr>
+      <w:tr>
+        <w:tc><w:tcPr><w:shd w:fill="DBEAFE"/></w:tcPr><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>KPI Metric</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:shd w:fill="DBEAFE"/></w:tcPr><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Performance</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Conversion Fidelity → Target</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:rPr><w:color w:val="059669"/><w:b/></w:rPr><w:t>100% Exact Match</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+    <w:p><w:r><w:br w:type="page"/></w:r></w:p>
+    <w:p>
+      <w:r><w:rPr><w:b/><w:sz w:val="36"/><w:color w:val="1E40AF"/></w:rPr><w:t>Page 2: Layout &amp; Typography Preservation</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:r><w:t>Verified multi-page document fidelity across high-DPI canvas slices.</w:t></w:r>
+    </w:p>
+  </w:body>
+</w:document>`);
+
+      const docxBytes = await zip.generateAsync({ type: 'arraybuffer' });
+      const file = new File([docxBytes], "executive_summary.docx", { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+      await handleUniversalFileInput(file);
+      
+      selectUniversalTarget('pdf');
+      await executeUniversalConversion();
+      
+      return {
+        downloadName: univState.convertedFilename,
+        isBlob: univState.convertedBlob instanceof Blob,
+        blobSize: univState.convertedBlob ? univState.convertedBlob.size : 0
+      };
+    });
+
+    console.log('  ✓ Exact DOCX -> PDF conversion result (High Fidelity):', docxToPdfResult);
+    if (!docxToPdfResult.downloadName.endsWith('.pdf')) throw new Error('DOCX to PDF conversion failed to output .pdf');
+    if (docxToPdfResult.blobSize < 10000) throw new Error(`DOCX to PDF output blob too small (${docxToPdfResult.blobSize} bytes), expected high-fidelity rendered PDF`);
+
     // ----------------------------------------------------
     // STEP 7: Reset & Mobile Dock Integration
     // ----------------------------------------------------
