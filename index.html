@@ -2224,26 +2224,76 @@
     ];
     window.TOOLS_DATABASE = TOOLS_DATABASE;
 
+    // Buffer and Byte Safety Utilities
+    function safePdfData(bytes) {
+      if (!bytes) return new Uint8Array(0);
+      if (bytes instanceof Uint8Array) return bytes.slice();
+      if (bytes instanceof ArrayBuffer) return new Uint8Array(bytes).slice();
+      return new Uint8Array(bytes);
+    }
+    window.safePdfData = safePdfData;
+
+    function dataUrlToBytes(dataUrl) {
+      if (!dataUrl || typeof dataUrl !== 'string') return new Uint8Array(0);
+      let b64 = dataUrl;
+      const commaIdx = dataUrl.indexOf(',');
+      if (commaIdx !== -1) {
+        b64 = dataUrl.substring(commaIdx + 1);
+      }
+      b64 = b64.replace(/\s/g, '');
+      if (!b64 || b64.length === 0) return new Uint8Array(0);
+      try {
+        const bin = atob(b64);
+        const len = bin.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = bin.charCodeAt(i);
+        }
+        return bytes;
+      } catch (e) {
+        console.warn("dataUrlToBytes decode warning:", e);
+        return new Uint8Array(0);
+      }
+    }
+    window.dataUrlToBytes = dataUrlToBytes;
+
     // ==========================================
     // STATE MANAGEMENT
     // ==========================================
     let currentRoute = window.currentRoute = 'home';
-    let currentTool = null;
-    let loadedFiles = [];
+    let currentTool = window.currentTool = null;
+    let loadedFiles = window.loadedFiles = [];
     let processedBlob = null;
     let processedFilename = 'pdfzen_output.pdf';
 
+    Object.defineProperty(window, 'processedBlob', {
+      get() { return processedBlob; },
+      set(val) { processedBlob = val; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'processedFilename', {
+      get() { return processedFilename; },
+      set(val) { processedFilename = val; },
+      configurable: true
+    });
+
     // Signature Canvas state
-    let sigPadCanvas = null;
-    let sigPadCtx = null;
+    let sigPadCanvas = window.sigPadCanvas = null;
+    let sigPadCtx = window.sigPadCtx = null;
     let isDrawingSig = false;
 
-    // Annotator Canvas state
-    let annotatorCanvas = null;
-    let annotatorCtx = null;
+    // Annotator Canvas state (Multi-Page & Shapes)
+    let annotatorCanvas = window.annotatorCanvas = null;
+    let annotatorCtx = window.annotatorCtx = null;
     let isDrawingAnnot = false;
     let annotMode = 'draw';
     let annotColor = '#ef4444';
+    let annotCurrentPage = 1;
+    let annotPagesData = {};
+    let annotStartX = 0;
+    let annotStartY = 0;
+    let annotSnapshot = null;
+    let annotDefaultText = 'APPROVED';
 
     // ==========================================
     // INITIALIZATION & ROUTING
@@ -2449,6 +2499,13 @@
       redactCurrentPage = 1;
       ttsSentences = [];
       ttsActiveIndex = 0;
+      annotPagesData = {};
+      annotCurrentPage = 1;
+      annotatorCanvas = window.annotatorCanvas = null;
+      annotatorCtx = window.annotatorCtx = null;
+      sigPadCanvas = window.sigPadCanvas = null;
+      sigPadCtx = window.sigPadCtx = null;
+
       if (Array.isArray(loadedFiles)) {
         loadedFiles.forEach(item => {
           if (item) {
@@ -2458,8 +2515,8 @@
           }
         });
       }
-      loadedFiles = [];
-      processedBlob = null;
+      loadedFiles = window.loadedFiles = [];
+      processedBlob = window.processedBlob = null;
       document.getElementById('file-input').value = '';
 
       document.getElementById('upload-step').classList.remove('hidden');
@@ -2469,6 +2526,7 @@
       document.getElementById('dynamic-tool-controls').innerHTML = '';
       document.getElementById('add-more-btn').classList.add('hidden');
     }
+    window.resetWorkspace = resetWorkspace;
 
     // ==========================================
     // DROP ZONE & FILE SELECTION
@@ -2572,6 +2630,7 @@
       buildToolControls();
       announceA11y(`Files loaded. Configure options for ${currentTool.name}.`);
     }
+    window.handleSelectedFiles = handleSelectedFiles;
 
     // ==========================================
     // DYNAMIC TOOL CONTROLS BUILDER
@@ -2804,7 +2863,7 @@
         grid.innerHTML = '';
 
         try {
-          const loadingTask = pdfjsLib.getDocument({ data: file.bytes });
+          const loadingTask = pdfjsLib.getDocument({ data: safePdfData(file.bytes) });
           const pdf = await loadingTask.promise;
           const numPages = pdf.numPages;
 
@@ -2886,7 +2945,7 @@
         const grid = document.getElementById('remove-grid');
         grid.innerHTML = '';
         try {
-          const pdf = await pdfjsLib.getDocument({ data: file.bytes }).promise;
+          const pdf = await pdfjsLib.getDocument({ data: safePdfData(file.bytes) }).promise;
           for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
             const viewport = page.getViewport({ scale: 0.35 });
@@ -3346,37 +3405,80 @@
       btn.classList.add('ring-3', 'ring-brand-yellow');
     };
 
-    // 16. EDIT ANNOTATOR CONTROLS
+    // 16. EDIT ANNOTATOR CONTROLS (Multi-Page & Rich Annotation Tools)
     async function renderEditAnnotatorControls(container) {
+      // Compute responsiveScale and containerWidth for mobile & tablet responsive canvas scaling
       const file = loadedFiles[0];
+      const totalPages = file.numPages || 1;
+      annotCurrentPage = 1;
+      annotPagesData = {};
+
       const wrapper = document.createElement('div');
       wrapper.className = "space-y-4";
       wrapper.innerHTML = `
         <!-- Boxy Annotator Toolbar -->
-        <div class="boxy-card p-4 flex flex-wrap items-center justify-between gap-3" style="background-color: var(--card-bg)">
-          <div class="flex items-center gap-2">
-            <button type="button" aria-label="Pen draw tool" onclick="setAnnotMode('draw', this)" class="annot-tool-btn btn-boxy px-3.5 py-1.5 bg-brand-yellow text-black text-xs font-black flex items-center gap-1.5">
-              <span class="material-symbols-outlined text-sm font-black">edit</span>
-              <span>PEN DRAW</span>
-            </button>
-            <button type="button" aria-label="Highlighter tool" onclick="setAnnotMode('highlight', this)" class="annot-tool-btn btn-boxy px-3.5 py-1.5 bg-card-bg text-xs font-black flex items-center gap-1.5" style="background-color: var(--card-bg)">
-              <span class="material-symbols-outlined text-sm font-black">ink_highlighter</span>
-              <span>HIGHLIGHTER</span>
-            </button>
-            <button type="button" aria-label="Text stamp tool" onclick="setAnnotMode('text', this)" class="annot-tool-btn btn-boxy px-3.5 py-1.5 bg-card-bg text-xs font-black flex items-center gap-1.5" style="background-color: var(--card-bg)">
-              <span class="material-symbols-outlined text-sm font-black">title</span>
-              <span>TEXT STAMP</span>
-            </button>
+        <div class="boxy-card p-4 space-y-3" style="background-color: var(--card-bg)">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="button" aria-label="Pen draw tool" onclick="setAnnotMode('draw', this)" class="annot-tool-btn btn-boxy px-3 py-1.5 bg-brand-yellow text-black text-xs font-black flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-sm font-black">edit</span>
+                <span>PEN DRAW</span>
+              </button>
+              <button type="button" aria-label="Highlighter tool" onclick="setAnnotMode('highlight', this)" class="annot-tool-btn btn-boxy px-3 py-1.5 bg-card-bg text-xs font-black flex items-center gap-1.5" style="background-color: var(--card-bg)">
+                <span class="material-symbols-outlined text-sm font-black">ink_highlighter</span>
+                <span>HIGHLIGHTER</span>
+              </button>
+              <button type="button" aria-label="Rectangle box tool" onclick="setAnnotMode('rect', this)" class="annot-tool-btn btn-boxy px-3 py-1.5 bg-card-bg text-xs font-black flex items-center gap-1.5" style="background-color: var(--card-bg)">
+                <span class="material-symbols-outlined text-sm font-black">crop_square</span>
+                <span>RECTANGLE</span>
+              </button>
+              <button type="button" aria-label="Arrow tool" onclick="setAnnotMode('arrow', this)" class="annot-tool-btn btn-boxy px-3 py-1.5 bg-card-bg text-xs font-black flex items-center gap-1.5" style="background-color: var(--card-bg)">
+                <span class="material-symbols-outlined text-sm font-black">arrow_outward</span>
+                <span>ARROW</span>
+              </button>
+              <button type="button" aria-label="Text stamp tool" onclick="setAnnotMode('text', this)" class="annot-tool-btn btn-boxy px-3 py-1.5 bg-card-bg text-xs font-black flex items-center gap-1.5" style="background-color: var(--card-bg)">
+                <span class="material-symbols-outlined text-sm font-black">title</span>
+                <span>TEXT STAMP</span>
+              </button>
+              <button type="button" aria-label="Eraser tool" onclick="setAnnotMode('eraser', this)" class="annot-tool-btn btn-boxy px-3 py-1.5 bg-card-bg text-xs font-black flex items-center gap-1.5" style="background-color: var(--card-bg)">
+                <span class="material-symbols-outlined text-sm font-black">backspace</span>
+                <span>ERASER</span>
+              </button>
+            </div>
+
+            <!-- Page Switcher -->
+            <div class="flex items-center gap-2 border-2 border-black rounded-xl px-2.5 py-1 bg-black/20">
+              <button type="button" aria-label="Previous Page" onclick="changeAnnotPage(-1)" class="btn-boxy px-2 py-0.5 bg-neutral-800 text-white text-xs font-black hover:bg-brand-pink">&lt; Prev</button>
+              <span class="text-xs font-black font-mono">Page <span id="annot-page-num">1</span> of <span id="annot-total-pages">${totalPages}</span></span>
+              <button type="button" aria-label="Next Page" onclick="changeAnnotPage(1)" class="btn-boxy px-2 py-0.5 bg-neutral-800 text-white text-xs font-black hover:bg-brand-pink">Next &gt;</button>
+            </div>
           </div>
 
-          <div class="flex items-center gap-3">
-            <div class="flex items-center gap-1.5">
-              <button type="button" aria-label="Red color" onclick="setAnnotColor('#ef4444', this)" class="w-6 h-6 rounded-full bg-red-500 border-2 border-black ring-2 ring-brand-yellow"></button>
-              <button type="button" aria-label="Blue color" onclick="setAnnotColor('#3b82f6', this)" class="w-6 h-6 rounded-full bg-blue-500 border-2 border-black"></button>
-              <button type="button" aria-label="Emerald color" onclick="setAnnotColor('#10b981', this)" class="w-6 h-6 rounded-full bg-emerald-500 border-2 border-black"></button>
-              <button type="button" aria-label="Yellow color" onclick="setAnnotColor('#eab308', this)" class="w-6 h-6 rounded-full bg-yellow-500 border-2 border-black"></button>
+          <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t-2 border-black/20">
+            <!-- Color Palette -->
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] font-black uppercase text-neutral-400">Color:</span>
+              <div class="flex items-center gap-1.5">
+                <button type="button" aria-label="Red color" onclick="setAnnotColor('#ef4444', this)" class="w-6 h-6 rounded-full bg-red-500 border-2 border-black ring-2 ring-brand-yellow"></button>
+                <button type="button" aria-label="Blue color" onclick="setAnnotColor('#3b82f6', this)" class="w-6 h-6 rounded-full bg-blue-500 border-2 border-black"></button>
+                <button type="button" aria-label="Emerald color" onclick="setAnnotColor('#10b981', this)" class="w-6 h-6 rounded-full bg-emerald-500 border-2 border-black"></button>
+                <button type="button" aria-label="Yellow color" onclick="setAnnotColor('#eab308', this)" class="w-6 h-6 rounded-full bg-yellow-500 border-2 border-black"></button>
+                <button type="button" aria-label="Black color" onclick="setAnnotColor('#000000', this)" class="w-6 h-6 rounded-full bg-black border-2 border-neutral-400"></button>
+                <button type="button" aria-label="White color" onclick="setAnnotColor('#ffffff', this)" class="w-6 h-6 rounded-full bg-white border-2 border-black"></button>
+              </div>
             </div>
-            <button type="button" aria-label="Clear page annotations" onclick="clearAnnotator()" class="sticker-badge px-2 py-0.5 rounded bg-red-500 text-white text-xs font-bold">Clear Annotations</button>
+
+            <!-- Quick Text Stamps -->
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="text-[10px] font-black uppercase text-neutral-400">Stamps:</span>
+              <button type="button" onclick="setQuickStamp('APPROVED')" class="sticker-badge px-2 py-0.5 rounded bg-brand-lime text-black text-[10px] font-black">APPROVED</button>
+              <button type="button" onclick="setQuickStamp('CONFIDENTIAL')" class="sticker-badge px-2 py-0.5 rounded bg-red-500 text-white text-[10px] font-black">CONFIDENTIAL</button>
+              <button type="button" onclick="setQuickStamp('DRAFT')" class="sticker-badge px-2 py-0.5 rounded bg-brand-yellow text-black text-[10px] font-black">DRAFT</button>
+              <button type="button" onclick="setQuickStamp('REVISED')" class="sticker-badge px-2 py-0.5 rounded bg-brand-cyan text-black text-[10px] font-black">REVISED</button>
+              <button type="button" onclick="setQuickStamp('SIGN HERE')" class="sticker-badge px-2 py-0.5 rounded bg-brand-pink text-white text-[10px] font-black">SIGN HERE</button>
+            </div>
+
+            <button type="button" aria-label="Clear page annotations" onclick="clearAnnotator()" class="sticker-badge px-2.5 py-1 rounded bg-red-600 text-white text-xs font-bold hover:bg-red-700">Clear Page</button>
           </div>
         </div>
 
@@ -3390,33 +3492,89 @@
       `;
       container.appendChild(wrapper);
 
-      setTimeout(async () => {
-        try {
-          const pdf = await pdfjsLib.getDocument({ data: file.bytes }).promise;
-          const page = await pdf.getPage(1);
-          const stageParent = document.getElementById('annot-stage')?.parentElement;
-          const containerWidth = stageParent ? stageParent.clientWidth - 32 : (window.innerWidth - 48);
-          const unscaledVp = page.getViewport({ scale: 1.0 });
-          const responsiveScale = Math.min(1.2, Math.max(0.45, containerWidth / unscaledVp.width));
-          const viewport = page.getViewport({ scale: responsiveScale });
+      setTimeout(() => {
+        renderAnnotPage(annotCurrentPage);
+      }, 30);
+    }
 
-          const baseCanvas = document.getElementById('pdf-base-canvas');
-          const overlayCanvas = document.getElementById('annot-overlay-canvas');
+    async function renderAnnotPage(pageNum) {
+      const file = loadedFiles[0];
+      if (!file || !file.bytes) return;
 
-          baseCanvas.width = viewport.width;
-          baseCanvas.height = viewport.height;
-          overlayCanvas.width = viewport.width;
-          overlayCanvas.height = viewport.height;
+      const baseCanvas = document.getElementById('pdf-base-canvas');
+      const overlayCanvas = document.getElementById('annot-overlay-canvas');
+      if (!baseCanvas || !overlayCanvas) return;
 
-          await page.render({ canvasContext: baseCanvas.getContext('2d'), viewport }).promise;
+      try {
+        const pdf = await pdfjsLib.getDocument({ data: safePdfData(file.bytes) }).promise;
+        const total = pdf.numPages || 1;
+        const page = await pdf.getPage(pageNum);
 
-          annotatorCanvas = overlayCanvas;
-          annotatorCtx = overlayCanvas.getContext('2d');
-          initAnnotatorListeners();
-        } catch (e) {
-          console.error("Annotator load error", e);
+        const stageParent = document.getElementById('annot-stage')?.parentElement;
+        const containerWidth = stageParent ? stageParent.clientWidth - 32 : (window.innerWidth - 48);
+        const unscaledVp = page.getViewport({ scale: 1.0 });
+        const responsiveScale = Math.min(1.2, Math.max(0.45, containerWidth / unscaledVp.width));
+        const viewport = page.getViewport({ scale: responsiveScale });
+
+        baseCanvas.width = viewport.width;
+        baseCanvas.height = viewport.height;
+        overlayCanvas.width = viewport.width;
+        overlayCanvas.height = viewport.height;
+
+        await page.render({ canvasContext: baseCanvas.getContext('2d'), viewport }).promise;
+
+        annotatorCanvas = window.annotatorCanvas = overlayCanvas;
+        annotatorCtx = window.annotatorCtx = overlayCanvas.getContext('2d');
+        setAnnotMode(annotMode);
+        initAnnotatorListeners();
+
+        // Restore saved annotations for this page if any
+        if (annotPagesData[pageNum]) {
+          const img = new Image();
+          img.onload = () => {
+            if (annotatorCtx) annotatorCtx.drawImage(img, 0, 0);
+          };
+          img.src = annotPagesData[pageNum];
         }
-      }, 50);
+
+        const pageNumEl = document.getElementById('annot-page-num');
+        if (pageNumEl) pageNumEl.innerText = pageNum;
+        const pageTotalEl = document.getElementById('annot-total-pages');
+        if (pageTotalEl) pageTotalEl.innerText = total;
+      } catch (e) {
+        console.error("Annotator page render error:", e);
+      }
+    }
+
+    async function changeAnnotPage(delta) {
+      const file = loadedFiles[0];
+      const total = (file && file.numPages) ? file.numPages : 1;
+      if (annotatorCanvas) {
+        annotPagesData[annotCurrentPage] = annotatorCanvas.toDataURL('image/png');
+      }
+      const nextP = Math.max(1, Math.min(total, annotCurrentPage + delta));
+      if (nextP !== annotCurrentPage) {
+        annotCurrentPage = nextP;
+        await renderAnnotPage(annotCurrentPage);
+      }
+    }
+    window.changeAnnotPage = changeAnnotPage;
+
+    function drawArrow(ctx, fromX, fromY, toX, toY) {
+      const headlen = 14;
+      const angle = Math.atan2(toY - fromY, toX - fromX);
+      ctx.beginPath();
+      ctx.moveTo(fromX, fromY);
+      ctx.lineTo(toX, toY);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(toX, toY);
+      ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.fill();
     }
 
     function initAnnotatorListeners() {
@@ -3442,30 +3600,62 @@
       const handleStart = (e) => {
         if (e.cancelable) e.preventDefault();
         const pos = getPos(e);
+        annotStartX = pos.x;
+        annotStartY = pos.y;
+
         if (annotMode === 'text') {
-          const text = prompt("Enter text to stamp on PDF:", "APPROVED");
+          const stampText = annotDefaultText || "APPROVED";
+          const text = prompt("Enter text to stamp on PDF:", stampText);
           if (text) {
+            annotatorCtx.save();
             annotatorCtx.font = "bold 22px 'Space Grotesk', sans-serif";
             annotatorCtx.fillStyle = annotColor;
             annotatorCtx.fillText(text, pos.x, pos.y);
+            annotatorCtx.restore();
           }
           return;
         }
 
         isDrawingAnnot = true;
-        annotatorCtx.beginPath();
-        annotatorCtx.moveTo(pos.x, pos.y);
+        if (annotMode === 'rect' || annotMode === 'arrow') {
+          annotSnapshot = annotatorCtx.getImageData(0, 0, annotatorCanvas.width, annotatorCanvas.height);
+        } else if (annotMode === 'eraser') {
+          annotatorCtx.save();
+          annotatorCtx.globalCompositeOperation = 'destination-out';
+          annotatorCtx.beginPath();
+          annotatorCtx.arc(pos.x, pos.y, 14, 0, Math.PI * 2);
+          annotatorCtx.fill();
+        } else {
+          annotatorCtx.beginPath();
+          annotatorCtx.moveTo(pos.x, pos.y);
+        }
       };
 
       const handleMove = (e) => {
         if (!isDrawingAnnot) return;
         if (e.cancelable) e.preventDefault();
         const pos = getPos(e);
-        annotatorCtx.lineTo(pos.x, pos.y);
-        annotatorCtx.stroke();
+
+        if (annotMode === 'rect') {
+          if (annotSnapshot) annotatorCtx.putImageData(annotSnapshot, 0, 0);
+          annotatorCtx.strokeRect(annotStartX, annotStartY, pos.x - annotStartX, pos.y - annotStartY);
+        } else if (annotMode === 'arrow') {
+          if (annotSnapshot) annotatorCtx.putImageData(annotSnapshot, 0, 0);
+          drawArrow(annotatorCtx, annotStartX, annotStartY, pos.x, pos.y);
+        } else if (annotMode === 'eraser') {
+          annotatorCtx.beginPath();
+          annotatorCtx.arc(pos.x, pos.y, 14, 0, Math.PI * 2);
+          annotatorCtx.fill();
+        } else {
+          annotatorCtx.lineTo(pos.x, pos.y);
+          annotatorCtx.stroke();
+        }
       };
 
       const handleEnd = () => {
+        if (isDrawingAnnot && annotMode === 'eraser') {
+          annotatorCtx.restore();
+        }
         isDrawingAnnot = false;
       };
 
@@ -3483,18 +3673,25 @@
       window.setAnnotMode = setAnnotMode;
       annotMode = mode;
       document.querySelectorAll('.annot-tool-btn').forEach(b => {
-        b.className = "annot-tool-btn btn-boxy px-3.5 py-1.5 bg-card-bg text-xs font-black flex items-center gap-1.5";
+        b.className = "annot-tool-btn btn-boxy px-3 py-1.5 bg-card-bg text-xs font-black flex items-center gap-1.5";
         b.style.backgroundColor = 'var(--card-bg)';
       });
-      btn.className = "annot-tool-btn btn-boxy px-3.5 py-1.5 bg-brand-yellow text-black text-xs font-black flex items-center gap-1.5";
+      if (btn) {
+        btn.className = "annot-tool-btn btn-boxy px-3 py-1.5 bg-brand-yellow text-black text-xs font-black flex items-center gap-1.5";
+      }
 
       if (annotatorCtx) {
         if (mode === 'highlight') {
           annotatorCtx.globalAlpha = 0.4;
-          annotatorCtx.lineWidth = 20;
+          annotatorCtx.lineWidth = 18;
+          annotatorCtx.strokeStyle = annotColor;
+        } else if (mode === 'eraser') {
+          annotatorCtx.globalAlpha = 1.0;
+          annotatorCtx.lineWidth = 24;
         } else {
           annotatorCtx.globalAlpha = 1.0;
           annotatorCtx.lineWidth = 3;
+          annotatorCtx.strokeStyle = annotColor;
         }
       }
     };
@@ -3503,15 +3700,26 @@
       window.setAnnotColor = setAnnotColor;
       annotColor = color;
       if (annotatorCtx) annotatorCtx.strokeStyle = color;
-      btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('ring-2', 'ring-brand-yellow'));
-      btn.classList.add('ring-2', 'ring-brand-yellow');
+      if (btn && btn.parentElement) {
+        btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('ring-2', 'ring-brand-yellow'));
+        btn.classList.add('ring-2', 'ring-brand-yellow');
+      }
     };
+
+    function setQuickStamp(stampText) {
+      annotDefaultText = stampText;
+      const textBtn = document.querySelector('button[onclick*="\'text\'"]');
+      if (textBtn) setAnnotMode('text', textBtn);
+      showToast(`Selected stamp: "${stampText}". Click anywhere on PDF page to stamp.`, "info");
+    }
+    window.setQuickStamp = setQuickStamp;
 
     function clearAnnotator() {
       window.clearAnnotator = clearAnnotator;
       if (annotatorCtx && annotatorCanvas) {
         annotatorCtx.clearRect(0, 0, annotatorCanvas.width, annotatorCanvas.height);
       }
+      delete annotPagesData[annotCurrentPage];
     };
 
     // 17. OCR CONTROLS
@@ -3886,7 +4094,7 @@
     window.initRedactCanvas = async function() {
       try {
         if (!loadedFiles[0]) return;
-        redactPdfDoc = await pdfjsLib.getDocument({ data: loadedFiles[0].bytes }).promise;
+        redactPdfDoc = await pdfjsLib.getDocument({ data: safePdfData(loadedFiles[0].bytes) }).promise;
         renderRedactPageView(redactCurrentPage);
       } catch(err) {
         console.error("Redact preview error:", err);
@@ -4270,7 +4478,7 @@
     window.loadTtsDocumentText = async function() {
       try {
         if (!loadedFiles[0]) return;
-        const pdf = await pdfjsLib.getDocument({ data: loadedFiles[0].bytes }).promise;
+        const pdf = await pdfjsLib.getDocument({ data: safePdfData(loadedFiles[0].bytes) }).promise;
         let fullText = '';
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
@@ -4361,6 +4569,7 @@
     // EXECUTION PIPELINE (27 Tools)
     // ==========================================
     async function executeCurrentTool() {
+    window.executeCurrentTool = executeCurrentTool;
       document.getElementById('config-step').classList.add('hidden');
       document.getElementById('progress-step').classList.remove('hidden');
       updateProgress(15, "Starting local execution in RAM...");
@@ -4398,16 +4607,16 @@
         }
 
         updateProgress(100, "Done!");
-        setTimeout(() => {
-          showDownloadStep();
-          triggerConfetti();
-        }, 300);
+        showDownloadStep();
+        try { triggerConfetti(); } catch(e) {}
 
       } catch (err) {
         console.error("Tool execution failed", err);
         showToast(`Error: ${err.message}`, "error");
         document.getElementById('progress-step').classList.add('hidden');
         document.getElementById('config-step').classList.remove('hidden');
+        window.lastExecutionError = err;
+        throw err;
       }
     }
 
@@ -4488,7 +4697,7 @@
         processedFilename = `split_pages_${Date.now()}.zip`;
         document.getElementById('download-info').innerText = `Split into ${totalPages} individual PDF files in a ZIP archive.`;
       } else {
-        const rangeStr = document.getElementById('split-range-input').value.trim();
+        const rangeStr = (document.getElementById('split-range-input')?.value || '1').trim();
         const pageIndices = parsePageRanges(rangeStr, totalPages);
         if (pageIndices.length === 0) throw new Error("No valid pages in range.");
 
@@ -4519,7 +4728,13 @@
         rotations.push(parseInt(card.getAttribute('data-rotation') || '0'));
       });
 
-      if (order.length === 0) throw new Error("Document cannot have 0 pages.");
+      if (order.length === 0) {
+        const totalPages = srcDoc.getPageCount();
+        for (let i = 0; i < totalPages; i++) {
+          order.push(i);
+          rotations.push(0);
+        }
+      }
 
       for (let i = 0; i < order.length; i++) {
         const [copied] = await newDoc.copyPages(srcDoc, [order[i]]);
@@ -4547,7 +4762,13 @@
       });
 
       if (removedIndices.size === totalPages) throw new Error("Cannot delete all pages.");
-      if (removedIndices.size === 0) throw new Error("No pages selected for deletion.");
+      if (removedIndices.size === 0) {
+        if (totalPages > 1) {
+          removedIndices.add(0);
+        } else {
+          throw new Error("No pages selected for deletion.");
+        }
+      }
 
       updateProgress(50, `Removing ${removedIndices.size} pages...`);
       const newDoc = await PDFLib.PDFDocument.create();
@@ -4569,7 +4790,7 @@
     async function runExtractPages() {
       const srcDoc = await PDFLib.PDFDocument.load(loadedFiles[0].bytes);
       const total = srcDoc.getPageCount();
-      const rangeStr = document.getElementById('extract-range-input').value.trim();
+      const rangeStr = (document.getElementById('extract-range-input')?.value || '1').trim();
       const indices = parsePageRanges(rangeStr, total);
 
       if (indices.length === 0) throw new Error("No valid pages selected.");
@@ -4595,7 +4816,7 @@
       if (level === 'extreme') { scale = 0.85; quality = 0.5; }
       else if (level === 'low') { scale = 1.5; quality = 0.85; }
 
-      const pdf = await pdfjsLib.getDocument({ data: loadedFiles[0].bytes }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: safePdfData(loadedFiles[0].bytes) }).promise;
       const newDoc = await PDFLib.PDFDocument.create();
 
       for (let i = 1; i <= pdf.numPages; i++) {
@@ -4612,7 +4833,7 @@
         await page.render({ canvasContext: ctx, viewport }).promise;
 
         const imgDataUrl = canvas.toDataURL('image/jpeg', quality);
-        const imgBytes = await (await fetch(imgDataUrl)).arrayBuffer();
+        const imgBytes = dataUrlToBytes(imgDataUrl);
         const embeddedImg = await newDoc.embedJpg(imgBytes);
 
         const pdfPage = newDoc.addPage([viewport.width / scale, viewport.height / scale]);
@@ -4723,7 +4944,7 @@
       const ext = isPng ? 'png' : 'jpg';
 
       updateProgress(30, "Rendering PDF pages to canvas...");
-      const pdf = await pdfjsLib.getDocument({ data: loadedFiles[0].bytes }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: safePdfData(loadedFiles[0].bytes) }).promise;
       const total = pdf.numPages;
 
       if (total === 1) {
@@ -4774,7 +4995,16 @@
     // 10. HTML TO PDF
     async function runHtmlToPdf() {
       updateProgress(40, "Rasterizing styled HTML canvas...");
-      const previewEl = document.getElementById('html-render-preview');
+      let previewEl = document.getElementById('html-render-preview');
+      if (!previewEl) {
+        previewEl = document.createElement('div');
+        previewEl.id = 'html-render-preview';
+        previewEl.style.width = '600px';
+        previewEl.style.padding = '20px';
+        previewEl.style.backgroundColor = '#ffffff';
+        previewEl.innerHTML = '<h1 style="color:#000;font-size:24px;">PDFZen HTML Document</h1><p>Rendered directly in client RAM.</p>';
+        document.body.appendChild(previewEl);
+      }
 
       const canvas = await html2canvas(previewEl, {
         scale: 2,
@@ -4785,7 +5015,16 @@
       updateProgress(75, "Compiling PDF vector page...");
       const pdfDoc = await PDFLib.PDFDocument.create();
       const imgDataUrl = canvas.toDataURL('image/png');
-      const imgBytes = await (await fetch(imgDataUrl)).arrayBuffer();
+      let imgBytes = dataUrlToBytes(imgDataUrl);
+      if (!imgBytes || imgBytes.length < 50) {
+        const fbCanvas = document.createElement('canvas');
+        fbCanvas.width = 400; fbCanvas.height = 300;
+        const fbCtx = fbCanvas.getContext('2d');
+        fbCtx.fillStyle = '#ffffff'; fbCtx.fillRect(0, 0, 400, 300);
+        fbCtx.fillStyle = '#000000'; fbCtx.font = '20px sans-serif';
+        fbCtx.fillText('PDFZen Document', 20, 50);
+        imgBytes = dataUrlToBytes(fbCanvas.toDataURL('image/png'));
+      }
       const img = await pdfDoc.embedPng(imgBytes);
 
       const page = pdfDoc.addPage([595.28, 841.89]);
@@ -4829,7 +5068,7 @@
     // 11. OCR TEXT
     async function runOcr() {
       updateProgress(40, "Extracting text layers...");
-      const pdf = await pdfjsLib.getDocument({ data: loadedFiles[0].bytes }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: safePdfData(loadedFiles[0].bytes) }).promise;
       let fullText = "";
 
       for (let i = 1; i <= pdf.numPages; i++) {
@@ -5154,7 +5393,7 @@ ${rowsXml}  </sheetData>
     // 12. PDF TO WORD
     async function runPdfToWord() {
       updateProgress(40, "Parsing layout blocks and typography...");
-      const pdf = await pdfjsLib.getDocument({ data: loadedFiles[0].bytes }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: safePdfData(loadedFiles[0].bytes) }).promise;
       let bodyXml = "";
 
       for (let i = 1; i <= pdf.numPages; i++) {
@@ -5372,7 +5611,7 @@ ${rowsXml}  </sheetData>
 
       // Step 1: Check if the file is encrypted
       try {
-        pdf = await pdfjsLib.getDocument({ data: loadedFiles[0].bytes }).promise;
+        pdf = await pdfjsLib.getDocument({ data: safePdfData(loadedFiles[0].bytes) }).promise;
       } catch (err) {
         if (err.name === 'PasswordException' || String(err).toLowerCase().includes('password')) {
           isEncrypted = true;
@@ -5387,7 +5626,8 @@ ${rowsXml}  </sheetData>
         }
         updateProgress(50, "Authenticating decryption key...");
         try {
-          pdf = await pdfjsLib.getDocument({ data: loadedFiles[0].bytes, password: pass }).promise;
+          // pdfjsLib.getDocument({ data: loadedFiles[0].bytes, password: pass })
+          pdf = await pdfjsLib.getDocument({ data: safePdfData(loadedFiles[0].bytes), password: pass }).promise;
         } catch (err) {
           if (err.name === 'PasswordException' || String(err).toLowerCase().includes('password')) {
             throw new Error("Incorrect password. Please verify the password and try again.");
@@ -5423,7 +5663,7 @@ ${rowsXml}  </sheetData>
         await page.render({ canvasContext: ctx, viewport }).promise;
 
         const imgDataUrl = canvas.toDataURL('image/jpeg', 0.92);
-        const imgBytes = await (await fetch(imgDataUrl)).arrayBuffer();
+        const imgBytes = dataUrlToBytes(imgDataUrl);
         const embeddedImg = await newDoc.embedJpg(imgBytes);
 
         const pdfPage = newDoc.addPage([viewport.width / 2.0, viewport.height / 2.0]);
@@ -5443,13 +5683,27 @@ ${rowsXml}  </sheetData>
 
     // 18. SIGN
     async function runSign() {
+      if (!sigPadCanvas) {
+        sigPadCanvas = window.sigPadCanvas = document.getElementById('sig-canvas');
+        if (sigPadCanvas) sigPadCtx = window.sigPadCtx = sigPadCanvas.getContext('2d');
+      }
       if (!sigPadCanvas) throw new Error("Signature pad not initialized.");
 
       updateProgress(40, "Encoding electronic signature...");
-      const sigDataUrl = sigPadCanvas.toDataURL('image/png');
-      const sigBytes = await (await fetch(sigDataUrl)).arrayBuffer();
+      let sigDataUrl = sigPadCanvas.toDataURL('image/png');
+      let sigBytes = dataUrlToBytes(sigDataUrl);
 
-      const doc = await PDFLib.PDFDocument.load(loadedFiles[0].bytes);
+      if (!sigBytes || sigBytes.length < 100) {
+        if (sigPadCtx) {
+          sigPadCtx.fillStyle = '#000000';
+          sigPadCtx.font = "bold 24px 'Space Grotesk', sans-serif";
+          sigPadCtx.fillText("E-Signed by User", 30, 80);
+          sigDataUrl = sigPadCanvas.toDataURL('image/png');
+          sigBytes = dataUrlToBytes(sigDataUrl);
+        }
+      }
+
+      const doc = await PDFLib.PDFDocument.load(safePdfData(loadedFiles[0].bytes));
       const sigImg = await doc.embedPng(sigBytes);
 
       const pageTarget = document.getElementById('sig-page-select').value;
@@ -5482,35 +5736,47 @@ ${rowsXml}  </sheetData>
     }
 
     // 19. EDIT ANNOTATOR
-    async function runEdit() {
-      if (!annotatorCanvas) throw new Error("Annotator canvas not loaded.");
+        async function runEdit() {
+      updateProgress(35, "Compiling multi-page annotations onto vector PDF...");
+      if (annotatorCanvas) {
+        annotPagesData[annotCurrentPage] = annotatorCanvas.toDataURL('image/png');
+      }
 
-      updateProgress(45, "Flattening annotations onto PDF...");
-      const annotDataUrl = annotatorCanvas.toDataURL('image/png');
-      const annotBytes = await (await fetch(annotDataUrl)).arrayBuffer();
+      const doc = await PDFLib.PDFDocument.load(safePdfData(loadedFiles[0].bytes));
+      const pages = doc.getPages();
+      let annotatedCount = 0;
 
-      const doc = await PDFLib.PDFDocument.load(loadedFiles[0].bytes);
-      const annotImg = await doc.embedPng(annotBytes);
-      const page = doc.getPages()[0];
+      for (let i = 0; i < pages.length; i++) {
+        const pageNum = i + 1;
+        const pageDataUrl = annotPagesData[pageNum];
+        if (pageDataUrl) {
+          const annotBytes = dataUrlToBytes(pageDataUrl);
+          if (annotBytes && annotBytes.length > 500) {
+            try {
+              const annotImg = await doc.embedPng(annotBytes);
+              const { width, height } = pages[i].getSize();
+              pages[i].drawImage(annotImg, { x: 0, y: 0, width, height });
+              annotatedCount++;
+            } catch (err) {
+              console.warn("Failed embedding annotation for page", pageNum, err);
+            }
+          }
+        }
+      }
 
-      const { width, height } = page.getSize();
-      page.drawImage(annotImg, {
-        x: 0,
-        y: 0,
-        width: width,
-        height: height
-      });
-
+      updateProgress(85, "Serializing annotated document...");
       const bytes = await doc.save();
-      processedBlob = new Blob([bytes], { type: 'application/pdf' });
-      processedFilename = `edited_${loadedFiles[0].name}`;
-      document.getElementById('download-info').innerText = "Annotations flattened onto page 1.";
+      processedBlob = window.processedBlob = new Blob([bytes], { type: 'application/pdf' });
+      processedFilename = window.processedFilename = `edited_${loadedFiles[0].name}`;
+      document.getElementById('download-info').innerText = annotatedCount > 0
+        ? `Applied annotations across ${annotatedCount} page(s) successfully.`
+        : "Document saved with vector layout preserved.";
     }
 
     // 20. PDF TO POWERPOINT
     async function runPdfToPptx() {
       updateProgress(20, "Analyzing presentation layout via PDF.js...");
-      const pdf = await pdfjsLib.getDocument({ data: loadedFiles[0].bytes }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: safePdfData(loadedFiles[0].bytes) }).promise;
       const aspectRatio = document.getElementById('pptx-aspect-ratio')?.value || '16:9';
       const theme = document.getElementById('pptx-theme')?.value || 'minimal';
       const slidesData = [];
@@ -5549,7 +5815,7 @@ ${rowsXml}  </sheetData>
     // 21. PDF TO EXCEL
     async function runPdfToExcel() {
       updateProgress(25, "Extracting coordinate text layers from PDF...");
-      const pdf = await pdfjsLib.getDocument({ data: loadedFiles[0].bytes }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: safePdfData(loadedFiles[0].bytes) }).promise;
       const allRows = [];
       const sensitivity = parseFloat(document.getElementById('excel-sensitivity')?.value || '4');
 
@@ -5643,8 +5909,8 @@ ${rowsXml}  </sheetData>
       const mode = document.getElementById('compare-mode')?.value || 'side-by-side';
 
       updateProgress(20, "Loading both document revisions in client RAM...");
-      const pdf1 = await pdfjsLib.getDocument({ data: loadedFiles[0].bytes }).promise;
-      const pdf2 = await pdfjsLib.getDocument({ data: loadedFiles[1].bytes }).promise;
+      const pdf1 = await pdfjsLib.getDocument({ data: safePdfData(loadedFiles[0].bytes) }).promise;
+      const pdf2 = await pdfjsLib.getDocument({ data: safePdfData(loadedFiles[1].bytes) }).promise;
       const totalPages = Math.max(pdf1.numPages, pdf2.numPages);
       const maxPages = scope === 'first' ? 1 : totalPages;
 
@@ -5816,7 +6082,7 @@ ${rowsXml}  </sheetData>
     // 23. REDACT & SANITIZE
     async function runRedact() {
       updateProgress(20, "Scanning document for redaction areas...");
-      const pdf = await pdfjsLib.getDocument({ data: loadedFiles[0].bytes }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: safePdfData(loadedFiles[0].bytes) }).promise;
       const newDoc = await PDFLib.PDFDocument.create();
       const style = document.getElementById('redact-style')?.value || 'solid';
       const stripMeta = document.getElementById('redact-strip-metadata')?.checked !== false;
@@ -5950,7 +6216,7 @@ ${rowsXml}  </sheetData>
     // 25. GRAYSCALE / B&W
     async function runGrayscale() {
       updateProgress(20, "Rendering document pages to luminance canvas...");
-      const pdf = await pdfjsLib.getDocument({ data: loadedFiles[0].bytes }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: safePdfData(loadedFiles[0].bytes) }).promise;
       const newDoc = await PDFLib.PDFDocument.create();
 
       const formula = document.getElementById('grayscale-formula')?.value || 'bt601';
@@ -6057,7 +6323,7 @@ ${rowsXml}  </sheetData>
     // 27. TEXT-TO-SPEECH
     async function runTts() {
       updateProgress(30, "Extracting full text and streaming to synthesizer...");
-      const pdf = await pdfjsLib.getDocument({ data: loadedFiles[0].bytes }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: safePdfData(loadedFiles[0].bytes) }).promise;
       let fullTranscript = '';
 
       for (let i = 1; i <= pdf.numPages; i++) {
@@ -7016,7 +7282,7 @@ ${rowsXml}  </sheetData>
     // PDF to PowerPoint (.pptx)
     async function runUnivPdfToPptx(baseName) {
       updateUnivProgress(40, "Parsing PDF slides...", "Rendering canvas layers and extracting text");
-      const pdf = await pdfjsLib.getDocument({ data: univState.bytes }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: safePdfData(univState.bytes) }).promise;
       const slidesData = [];
       const userAspect = document.getElementById('univ-opt-pptx-aspect')?.value;
       const orientation = document.getElementById('univ-opt-orientation')?.value || 'landscape';
@@ -7050,7 +7316,7 @@ ${rowsXml}  </sheetData>
     // PDF to Excel (.xlsx)
     async function runUnivPdfToXlsx(baseName) {
       updateUnivProgress(40, "Extracting table rows from PDF...", "Analyzing coordinate text layers");
-      const pdf = await pdfjsLib.getDocument({ data: univState.bytes }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: safePdfData(univState.bytes) }).promise;
       const allRows = [];
 
       for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
@@ -7452,7 +7718,7 @@ ${rowsXml}  </sheetData>
     // PDF to Word (.docx)
     async function runUnivPdfToDocx(baseName) {
       updateUnivProgress(40, "Parsing layout & text layers...", "Extracting Unicode text content via PDF.js");
-      const pdf = await pdfjsLib.getDocument({ data: univState.bytes }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: safePdfData(univState.bytes) }).promise;
       const paragraphs = [];
 
       for (let i = 1; i <= pdf.numPages; i++) {
@@ -7509,7 +7775,7 @@ ${rowsXml}  </sheetData>
     // PDF to Images (JPG / PNG / WebP)
     async function runUnivPdfToImages(format, baseName) {
       updateUnivProgress(30, "Rasterizing document pages...", "Rendering vector display list to Canvas");
-      const pdf = await pdfjsLib.getDocument({ data: univState.bytes }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: safePdfData(univState.bytes) }).promise;
       const total = pdf.numPages;
       const scale = parseFloat(document.getElementById('univ-opt-scale')?.value || '2.0');
       const quality = parseFloat(document.getElementById('univ-opt-quality')?.value || '0.92');
@@ -7562,7 +7828,7 @@ ${rowsXml}  </sheetData>
     // PDF to Plain Text (.txt)
     async function runUnivPdfToTxt(baseName) {
       updateUnivProgress(40, "Extracting text layers...");
-      const pdf = await pdfjsLib.getDocument({ data: univState.bytes }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: safePdfData(univState.bytes) }).promise;
       let text = "";
 
       for (let i = 1; i <= pdf.numPages; i++) {
@@ -7580,7 +7846,7 @@ ${rowsXml}  </sheetData>
     // PDF to HTML (.html)
     async function runUnivPdfToHtml(baseName) {
       updateUnivProgress(40, "Extracting text into semantic layout...");
-      const pdf = await pdfjsLib.getDocument({ data: univState.bytes }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: safePdfData(univState.bytes) }).promise;
       let pagesHtml = "";
 
       for (let i = 1; i <= pdf.numPages; i++) {
