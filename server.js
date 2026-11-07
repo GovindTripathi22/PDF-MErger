@@ -119,13 +119,20 @@ function handleRequest(req, res) {
 function startServer(port, attemptsLeft = MAX_PORT_ATTEMPTS, callback) {
   const server = http.createServer(handleRequest);
 
+  server.on('clientError', (err, socket) => {
+    if (err.code === 'ECONNRESET' || !socket || !socket.writable) return;
+    try {
+      socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+    } catch (e) {}
+  });
+
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE' && attemptsLeft > 0) {
       console.warn(`⚠️ Port ${port} is in use, trying port ${port + 1}...`);
+      try { server.close(); } catch (e) {}
       startServer(port + 1, attemptsLeft - 1, callback);
     } else {
       console.error(`❌ Server error:`, err);
-      process.exit(1);
     }
   });
 
@@ -140,6 +147,9 @@ function startServer(port, attemptsLeft = MAX_PORT_ATTEMPTS, callback) {
       callback(server, port);
     }
   });
+
+  // Keep event loop alive
+  setInterval(() => {}, 1000 * 60 * 60);
 
   return server;
 }
