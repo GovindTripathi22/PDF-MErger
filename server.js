@@ -6,6 +6,14 @@ const INITIAL_PORT = parseInt(process.env.PORT, 10) || 3000;
 const ROOT_DIR = __dirname;
 const MAX_PORT_ATTEMPTS = 20;
 
+// Global process error handlers to ensure 100% server uptime
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ Caught unhandled process exception:', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('⚠️ Caught unhandled promise rejection:', reason);
+});
+
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -25,50 +33,87 @@ const MIME_TYPES = {
 };
 
 function handleRequest(req, res) {
-  // Normalize request URL
-  let parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  let pathname = parsedUrl.pathname;
-  
-  if (pathname === '/' || pathname === '') {
-    pathname = '/index.html';
-  }
+  try {
+    if (typeof req.on === 'function') {
+      req.on('error', (err) => {
+        console.warn('⚠️ Incoming request socket error:', err.message);
+      });
+    }
+    if (typeof res.on === 'function') {
+      res.on('error', (err) => {
+        console.warn('⚠️ Outgoing response socket error:', err.message);
+      });
+    }
 
-  // Resolve file path safely
-  const safeSuffix = path.normalize(pathname).replace(/^(\.\.[\/\\])+/, '');
-  let filePath = path.join(ROOT_DIR, safeSuffix);
-
-  // If directory requested, look for index.html inside
-  if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
-    filePath = path.join(filePath, 'index.html');
-  }
-
-  // Fallback to index.html for SPA routing if file does not exist
-  if (!fs.existsSync(filePath)) {
-    filePath = path.join(ROOT_DIR, 'index.html');
-  }
-
-  const ext = path.extname(filePath).toLowerCase();
-  const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-
-  fs.readFile(filePath, (err, content) => {
-    if (err) {
-      if (err.code === 'ENOENT') {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('404 Not Found');
-      } else {
-        res.writeHead(500, { 'Content-Type': 'text/plain' });
-        res.end(`500 Server Error: ${err.code}`);
-      }
+    // Normalize request URL
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end('400 Bad Request');
       return;
     }
 
-    res.writeHead(200, {
-      'Content-Type': contentType,
-      'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'no-cache, no-store, must-revalidate'
+    let pathname = parsedUrl.pathname;
+    
+    if (pathname === '/' || pathname === '') {
+      pathname = '/index.html';
+    }
+
+    // Protect against null bytes and path traversal
+    if (pathname.includes('\0')) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end('400 Bad Request');
+      return;
+    }
+
+    const safeSuffix = path.normalize(pathname).replace(/^(\.\.[\/\\])+/, '');
+    let filePath = path.join(ROOT_DIR, safeSuffix);
+
+    // If directory requested, look for index.html inside
+    try {
+      if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+        filePath = path.join(filePath, 'index.html');
+      }
+    } catch (e) {
+      filePath = path.join(ROOT_DIR, 'index.html');
+    }
+
+    // Fallback to index.html for SPA routing if file does not exist
+    if (!fs.existsSync(filePath)) {
+      filePath = path.join(ROOT_DIR, 'index.html');
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+
+    fs.readFile(filePath, (err, content) => {
+      if (err) {
+        if (err.code === 'ENOENT') {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('404 Not Found');
+        } else {
+          res.writeHead(500, { 'Content-Type': 'text/plain' });
+          res.end(`500 Server Error: ${err.code}`);
+        }
+        return;
+      }
+
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      });
+      res.end(content);
     });
-    res.end(content);
-  });
+  } catch (outerErr) {
+    console.error('⚠️ Unexpected error handling request:', outerErr);
+    try {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('500 Internal Server Error');
+    } catch (e) {}
+  }
 }
 
 function startServer(port, attemptsLeft = MAX_PORT_ATTEMPTS, callback) {
